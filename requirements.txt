@@ -1,4 +1,4 @@
-
+transformers
 librosa
 SpeechRecognition
 whisper
