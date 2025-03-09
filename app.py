@@ -4,7 +4,6 @@ import pandas as pd
 import librosa
 import speech_recognition as sr
 import whisper
-import spacy
 import seaborn as sns
 import matplotlib.pyplot as plt
 from textblob import TextBlob
@@ -15,14 +14,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+from transformers import pipeline  # Hugging Face's pipeline for NER
 
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    import subprocess
-    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-    nlp = spacy.load("en_core_web_sm")
+# Initialize Hugging Face NER pipeline
+ner_pipeline = pipeline("ner")
 
+# Load Whisper model for transcription
 model = whisper.load_model("base")
 
 # Streamlit UI
@@ -43,9 +40,8 @@ if uploaded_file:
     transcription = result["text"]
     st.write(transcription)
     
-    # Named Entity Recognition (NER)
-    doc = nlp(transcription)
-    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    # Named Entity Recognition (NER) using Hugging Face transformers
+    entities = ner_pipeline(transcription)
     st.subheader("Named Entities")
     st.write(entities)
     
