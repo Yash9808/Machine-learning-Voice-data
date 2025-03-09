@@ -12,3 +12,4 @@ numpy<2
 networkx
 torch
 streamlit>=1.29.0
+pydub
