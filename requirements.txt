@@ -1,12 +1,14 @@
-streamlit==1.29.0
+
 librosa
-speechrecognition
+SpeechRecognition
+whisper
 openai-whisper
 spacy
 seaborn
 matplotlib
 textblob
 scikit-learn
-numpy
+numpy<2
 networkx
 torch
+streamlit>=1.29.0
