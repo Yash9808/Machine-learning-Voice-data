@@ -6,7 +6,7 @@ import wave
 import seaborn as sns
 import matplotlib.pyplot as plt
 import speech_recognition as sr
-from pydub import AudioSegment
+import whisper  # Import Whisper
 from textblob import TextBlob
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
@@ -73,6 +73,13 @@ st.title("Audio Sentiment & Tone Analysis")
 
 uploaded_files = st.file_uploader("Choose Audio Files", type=["mp3"], accept_multiple_files=True)
 
+# Load Whisper model for transcription
+model = whisper.load_model("base")
+
+def transcribe_with_whisper(audio_file):
+    result = model.transcribe(audio_file)
+    return result["text"]
+
 if uploaded_files:
     # Data storage
     sentiment_results = []
@@ -81,30 +88,25 @@ if uploaded_files:
     for uploaded_file in uploaded_files:
         st.write(f"Processing: {uploaded_file.name}")
 
-        # Convert MP3 to WAV (16kHz, Mono)
-        audio = AudioSegment.from_mp3(uploaded_file)
-        audio = audio.set_frame_rate(16000).set_channels(1)[:30000]  # 30s limit
-        wav_file = f"temp_{uploaded_file.name}.wav"
-        audio.export(wav_file, format="wav")
+        # Convert MP3 to text using Whisper (no need to convert to WAV)
+        audio_path = f"temp_{uploaded_file.name}"
+        with open(audio_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())  # Save the uploaded MP3 file temporarily
+        
+        text = transcribe_with_whisper(audio_path)  # Transcribe the audio to text using Whisper
 
-        if check_audio_validity(wav_file):
-            # Sentiment and tone analysis
-            agent_text, agent_sentiment, agent_sentiment_score, apw, anw = analyze_sentiment(wav_file)
-            customer_text, customer_sentiment, customer_sentiment_score, cpw, cnw = analyze_sentiment(wav_file)
-            agent_tone, agent_tone_score = analyze_tone(wav_file)
-        else:
-            st.write(f"Skipping {uploaded_file.name}, no valid audio found.")
-            agent_text, agent_sentiment, agent_sentiment_score, apw, anw = "", "NU", 0, 0, 0
-            customer_text, customer_sentiment, customer_sentiment_score, cpw, cnw = "", "NU", 0, 0, 0
-            agent_tone, agent_tone_score = "Unknown", 0
-
+        # Perform sentiment analysis
+        agent_text, agent_sentiment, agent_sentiment_score, apw, anw = analyze_sentiment(text)
+        customer_text, customer_sentiment, customer_sentiment_score, cpw, cnw = analyze_sentiment(text)
+        agent_tone, agent_tone_score = analyze_tone(audio_path)
+        
         # Save sentiment results
         sentiment_results.append([uploaded_file.name, agent_sentiment, customer_sentiment, agent_sentiment_score, customer_sentiment_score])
 
         # Save tone results
         tone_results.append([uploaded_file.name, agent_tone, agent_tone_score, apw, anw, cpw, cnw])
 
-        os.remove(wav_file)  # Remove temp file
+        os.remove(audio_path)  # Remove temporary MP3 file
 
     # Create DataFrames for sentiment and tone analysis
     df_sentiment = pd.DataFrame(sentiment_results, columns=["File", "Agent Sentiment", "Customer Sentiment", "Agent Sentiment Score", "Customer Sentiment Score"])
@@ -204,38 +206,8 @@ if uploaded_files:
         'State': ['Happy', 'Sad', 'Neutral'],
         'Next State': ['Sad', 'Happy', 'Neutral'],
         'Transition Probability': [0.2, 0.3, 0.5],
-        'Sales Increase Occurrence': [1, 0, 0]
+        'Emotion Distribution': ['Positive', 'Negative', 'Neutral']
     })
-    
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(transition_df.pivot(index='State', columns='Next State', values='Transition Probability'),
-                annot=True, fmt='.2f', cmap="YlGnBu", cbar_kws={'label': 'Transition Probability'})
-    plt.title('Transition Probabilities with Sales Increase Data', fontsize=16)
-    plt.xlabel('Next State', fontsize=12)
-    plt.ylabel('Current State', fontsize=12)
-    st.pyplot()
+    st.write("Transition Probability Table")
+    st.write(transition_df)
 
-    # Sales Increase Occurrence Heatmap
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(transition_df.pivot(index='State', columns='Next State', values='Sales Increase Occurrence'),
-                annot=True, fmt='.0f', cmap="Reds", cbar_kws={'label': 'Sales Increase Occurrence'})
-    plt.title('Sales Increase Occurrences in State Transitions', fontsize=16)
-    plt.xlabel('Next State', fontsize=12)
-    plt.ylabel('Current State', fontsize=12)
-    st.pyplot()
-
-    # Scatter Plot for Audio Length vs State with Long Calls Marked
-    df_combined['Audio Length (sec)'] = np.random.randint(100, 600, size=len(df_combined))  # Example data for audio length
-    df_combined['Long Call'] = df_combined['Audio Length (sec)'] > 500  # Flagging long calls
-    
-    plt.figure(figsize=(12, 6))
-    sns.scatterplot(x=df_combined.index, y='Audio Length (sec)', data=df_combined, hue='Agent Sentiment', palette="Set1", legend=None)
-
-    long_call_df = df_combined[df_combined['Long Call']]
-    plt.scatter(long_call_df.index, long_call_df['Audio Length (sec)'], color='red', s=100, label='Long Call (>500 sec)', edgecolor='black', marker='o')
-
-    plt.title('Audio Length vs State with Long Calls and Issue Calls Marked', fontsize=16)
-    plt.xlabel('Index', fontsize=12)
-    plt.ylabel('Audio Length (sec)', fontsize=12)
-    plt.legend()
-    st.pyplot()
