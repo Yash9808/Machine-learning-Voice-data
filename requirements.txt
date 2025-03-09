@@ -1,0 +1,12 @@
+streamlit
+librosa
+speechrecognition
+openai-whisper
+spacy
+seaborn
+matplotlib
+textblob
+scikit-learn
+numpy
+networkx
+torch
