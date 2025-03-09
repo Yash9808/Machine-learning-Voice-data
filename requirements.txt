@@ -13,4 +13,4 @@ networkx
 torch
 streamlit>=1.29.0
 pydub
-tensorflow
+tensorflow>=2.0.0
