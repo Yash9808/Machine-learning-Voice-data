@@ -14,4 +14,4 @@ streamlit==1.29.0
 pydub
 tensorflow>=2.0.0
 ffmpeg-python
-torch==2.0.1
+torch==1.12.1
