@@ -22,8 +22,9 @@ model = whisper.load_model("base")
 
 # Streamlit UI
 st.title("Call Analysis & Prediction App")
-st.sidebar.header("Upload Call Recording")
+st.sidebar.header("Upload Call Recording or CSV Data")
 uploaded_file = st.sidebar.file_uploader("Upload an MP3 file", type=["mp3"])
+uploaded_csv = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
 
 if uploaded_file:
     file_path = f"temp.mp3"
@@ -56,13 +57,26 @@ if uploaded_file:
     st.write(f"Average Pitch: {avg_pitch:.2f} Hz")
     
     # Save Data
-    df = pd.DataFrame([{"Transcription": transcription, "Sentiment": sentiment, "Avg Pitch": avg_pitch}])
+    df = pd.DataFrame([{"File": uploaded_file.name, "Transcription": transcription, "Sentiment": sentiment, "Avg Pitch": avg_pitch}])
     df.to_csv("call_analysis.csv", index=False)
     
     # Visualization
     st.subheader("Data Visualization")
     sns.histplot(df["Sentiment"], kde=True)
     st.pyplot()
+
+if uploaded_csv:
+    st.subheader("Uploaded CSV Data")
+    data = pd.read_csv(uploaded_csv)
+    st.write(data.head())
+
+    # Prepare Data for ML
+    X = data.drop(columns=["File", "Agent Name", "Customer Name", "Overall Sentiment"])
+    y = data["Overall Sentiment"].apply(lambda x: 1 if x == "positive" else 0)
+    X_tensor = torch.tensor(X.values, dtype=torch.float32)
+    y_tensor = torch.tensor(y.values, dtype=torch.float32)
+    dataset = TensorDataset(X_tensor, y_tensor)
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
     
     # Machine Learning Model (LSTM)
     class LSTMModel(nn.Module):
@@ -75,16 +89,8 @@ if uploaded_file:
             lstm_out, _ = self.lstm(x)
             return self.fc(lstm_out[:, -1, :])
     
-    # Dummy Data for ML
-    X = np.random.rand(100, 10, 3)
-    y = np.random.randint(0, 2, 100)
-    X_tensor = torch.tensor(X, dtype=torch.float32)
-    y_tensor = torch.tensor(y, dtype=torch.float32)
-    dataset = TensorDataset(X_tensor, y_tensor)
-    dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
-    
-    # Train LSTM
-    model = LSTMModel(3, 10, 1)
+    # Train LSTM on Real Data
+    model = LSTMModel(X.shape[1], 10, 1)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(5):
@@ -96,4 +102,4 @@ if uploaded_file:
             optimizer.step()
     
     st.subheader("Machine Learning Model Trained")
-    st.write("LSTM Model has been trained on dummy data.")
+    st.write("LSTM Model has been trained on uploaded CSV data.")
