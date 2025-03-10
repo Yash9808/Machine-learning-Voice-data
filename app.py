@@ -69,7 +69,7 @@ def analyze_tone(audio_file):
         return "Frustrated", -0.8
 
 # Streamlit app interface
-st.title("Audio Sentiment & Tone Analysis")
+st.title("ML outcome of Bulk Data")
 
 uploaded_files = st.file_uploader("Choose Audio Files", type=["mp3"], accept_multiple_files=True)
 
