@@ -10,7 +10,7 @@ textblob
 scikit-learn
 numpy<2
 networkx
-streamlit==1.29.0
+streamlit==1.43.1
 pydub
 tensorflow>=2.0.0
 ffmpeg-python
