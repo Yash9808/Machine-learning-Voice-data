@@ -12,10 +12,30 @@ from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
 from pydub import AudioSegment  # For MP3 to WAV conversion
+import subprocess
 
-# Set FFmpeg and ffprobe path for Pydub
-# Update the path below to match your FFmpeg installation
-os.environ["FFMPEG_BINARY"] = "/path/to/ffmpeg"  # Ensure this points to your ffmpeg installation
+# Clone FFmpeg from GitHub and compile it
+def install_ffmpeg():
+    if not os.path.exists("ffmpeg"):
+        # Clone the FFmpeg repository from GitHub
+        subprocess.run(["git", "clone", "https://git.ffmpeg.org/ffmpeg.git", "ffmpeg"])
+        
+        # Change to ffmpeg directory
+        os.chdir("ffmpeg")
+        
+        # Configure and compile FFmpeg (this can take time, make sure you have necessary tools)
+        subprocess.run(["./configure", "--prefix=/usr/local", "--disable-static", "--enable-shared", "--enable-pic"])
+        subprocess.run(["make", "-j4"])  # Use `-j4` to compile using 4 cores (adjust based on your system)
+        subprocess.run(["sudo", "make", "install"])
+        
+        # Change back to the original directory
+        os.chdir("..")
+        
+        # Set the FFmpeg binary path for Pydub
+        os.environ["FFMPEG_BINARY"] = "/usr/local/bin/ffmpeg"
+
+# Install FFmpeg (if not installed)
+install_ffmpeg()
 
 # Download necessary NLTK data
 nltk.download("punkt")
