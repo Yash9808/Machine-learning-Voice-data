@@ -14,7 +14,7 @@ streamlit==1.43.1
 pydub
 tensorflow>=2.0.0
 ffmpeg-python
-torch==2.5.1
+torch==1.13.1
 pandas
 nltk
 torchaudio
