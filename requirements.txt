@@ -15,7 +15,7 @@ pydub
 tensorflow>=2.0.0
 ffmpeg-python
 torch==1.12.1
-
+ffmpeg-python
 pandas
 numpy
 librosa
