@@ -77,10 +77,7 @@ if "available_dates" in st.session_state:
             st.error(f"Download failed: {e}")
 
 # Set input folder (After successful download)
-if "input_folder" in st.session_state:
-    INPUT_FOLDER = st.session_state["input_folder"]
-else:
-    INPUT_FOLDER = "audio_files"
+INPUT_FOLDER = st.session_state.get("input_folder", "audio_files")
 
 # Load AI Model (Whisper for Transcription)
 whisper_model = whisper.load_model("base")
@@ -96,7 +93,7 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Function to convert MP3 to WAV using librosa and soundfile (No ffmpeg)
+# Function to convert MP3 to WAV using librosa and soundfile (No FFmpeg)
 def convert_mp3_to_wav(file_path):
     wav_file_path = file_path.replace(".mp3", ".wav")
 
@@ -162,7 +159,7 @@ def process_audio_files():
         entities = [word for word, tag in tagged_words if tag in ["NNP", "NN"]]
 
         # Extract Features
-        agent_name, person_name, subscription, medical_test, age = "", "", "", "", ""
+        agent_name, person_name, subscription, medical_test = "", "", "", ""
         emergency, problem, report_delay, upselling = "No", "No", "No", "No"
 
         for word in entities:
@@ -191,34 +188,14 @@ def process_audio_files():
             upselling = "Yes" if sentiment in ["Positive", "Neutral"] else "No"
 
         data.append([file, round(audio_length, 2), agent_name, person_name, subscription, medical_test,
-                     age, problem, emergency, problem, report_delay, upselling, entities, sentiment])
+                     problem, emergency, report_delay, upselling, sentiment])
 
     df = pd.DataFrame(data, columns=["File", "Audio Length (sec)", "Agent Name", "Person Name", "Subscription",
-                                     "Medical Test", "Age", "Issue", "Emergency", "Problem", "Report Delay",
-                                     "Upselling", "NER", "Sentiment"])
+                                     "Medical Test", "Problem", "Emergency", "Report Delay", "Upselling", "Sentiment"])
     df.to_csv(OUTPUT_CSV, index=False)
     return df
 
-# Load Data
+# Load and Display Data
 if "input_folder" in st.session_state:
     df = process_audio_files()
-    st.write("## Processed Data")
     st.dataframe(df.head())
-
-    # Sentiment Analysis
-    st.write("## Sentiment Analysis")
-    sentiment_counts = df["Sentiment"].value_counts()
-    st.bar_chart(sentiment_counts)
-
-    # Upselling Analysis
-    st.write("## Upselling Analysis")
-    upselling_counts = df["Upselling"].value_counts()
-    st.bar_chart(upselling_counts)
-
-    # Long Calls
-    st.write("## Long Calls")
-    st.dataframe(df[df["Audio Length (sec)"] > 500])
-
-    st.success("✅ Analysis Complete!")
-else:
-    st.warning("⚠️ Please connect to FTP and download files before processing.")
