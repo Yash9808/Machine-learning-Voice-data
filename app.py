@@ -13,6 +13,10 @@ from nltk.tag import pos_tag
 from ftplib import FTP
 from pydub import AudioSegment  # For MP3 to WAV conversion
 
+# Set FFmpeg and ffprobe path for Pydub
+# Update the path below to match your FFmpeg installation
+os.environ["FFMPEG_BINARY"] = "/path/to/ffmpeg"  # Ensure this points to your ffmpeg installation
+
 # Download necessary NLTK data
 nltk.download("punkt")
 nltk.download("averaged_perceptron_tagger")
