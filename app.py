@@ -1,8 +1,8 @@
 import os
 import pandas as pd
 import numpy as np
-import librosa
 import whisper
+import torchaudio
 import nltk
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -11,6 +11,7 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
+from pydub import AudioSegment  # Convert MP3 to WAV
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -96,6 +97,26 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
+# Convert MP3 to WAV
+def convert_mp3_to_wav(mp3_path):
+    wav_path = mp3_path.replace(".mp3", ".wav")
+    try:
+        audio = AudioSegment.from_mp3(mp3_path)
+        audio.export(wav_path, format="wav")
+        return wav_path
+    except Exception as e:
+        st.error(f"❌ MP3 to WAV conversion failed: {e}")
+        return None
+
+# Load audio without FFmpeg
+def load_audio(file_path):
+    try:
+        waveform, sample_rate = torchaudio.load(file_path)
+        return waveform.squeeze(0).numpy(), sample_rate
+    except Exception as e:
+        st.error(f"❌ Failed to load audio: {e}")
+        return None, None
+
 # Process Audio Files
 @st.cache_data
 def process_audio_files():
@@ -119,11 +140,20 @@ def process_audio_files():
             continue
 
         try:
-            # Get Audio Duration
-            audio_length = librosa.get_duration(path=file_path)
+            # Convert MP3 to WAV
+            wav_file = convert_mp3_to_wav(file_path)
+            if not wav_file:
+                continue  # Skip if conversion failed
 
-            # Transcription with error handling
-            result = whisper_model.transcribe(file_path)
+            # Get Audio Duration
+            waveform, sample_rate = load_audio(wav_file)
+            if waveform is None:
+                continue  # Skip if loading failed
+
+            audio_length = len(waveform) / sample_rate
+
+            # Transcription with Whisper
+            result = whisper_model.transcribe(wav_file)
             text = result.get("text", "")
 
             if not text.strip():
@@ -131,7 +161,7 @@ def process_audio_files():
                 continue
 
         except Exception as e:
-            st.error(f"❌ Whisper failed on {file}: {e}")
+            st.error(f"❌ Processing failed on {file}: {e}")
             continue  # Skip file
 
         # Named Entity Recognition (NER) using NLTK
@@ -177,26 +207,10 @@ def process_audio_files():
     df.to_csv(OUTPUT_CSV, index=False)
     return df
 
-# Load Data
+# Run Analysis
 if "input_folder" in st.session_state:
     df = process_audio_files()
     st.write("## Processed Data")
     st.dataframe(df.head())
 
-    # Sentiment Analysis
-    st.write("## Sentiment Analysis")
-    sentiment_counts = df["Sentiment"].value_counts()
-    st.bar_chart(sentiment_counts)
-
-    # Upselling Analysis
-    st.write("## Upselling Analysis")
-    upselling_counts = df["Upselling"].value_counts()
-    st.bar_chart(upselling_counts)
-
-    # Long Calls
-    st.write("## Long Calls")
-    st.dataframe(df[df["Audio Length (sec)"] > 500])
-
     st.success("✅ Analysis Complete!")
-else:
-    st.warning("⚠️ Please connect to FTP and download files before processing.")
