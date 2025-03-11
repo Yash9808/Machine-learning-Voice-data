@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import librosa
 import whisper
 import nltk
 import seaborn as sns
@@ -10,8 +9,8 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
-import soundfile as sf  # For MP3 to WAV conversion with librosa
-import io  # In case we need to handle in-memory files for streaming
+import soundfile as sf  # For writing WAV
+import audioread  # For decoding MP3
 
 # Set up NLTK
 nltk.download("punkt")
@@ -97,20 +96,25 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Function to convert MP3 to WAV (with librosa and soundfile)
+# Function to convert MP3 to WAV using audioread and soundfile (No ffmpeg)
 def convert_mp3_to_wav(file_path):
     wav_file_path = file_path.replace(".mp3", ".wav")
 
     try:
-        # Use librosa to load and save the MP3 as WAV with soundfile
-        y, sr = librosa.load(file_path, sr=None)
-        sf.write(wav_file_path, y, sr)  # Save the WAV file using soundfile
+        # Use audioread to decode the MP3 file
+        with audioread.audio_open(file_path) as audio_file:
+            # Read the audio data (pcm) and sample rate from the MP3 file
+            pcm_data = audio_file.read_data()
+            sample_rate = audio_file.samplerate
+            # Write PCM data into WAV file using soundfile
+            with sf.SoundFile(wav_file_path, 'w', samplerate=sample_rate, channels=audio_file.channels, subtype='PCM_16') as f:
+                f.write(pcm_data)
         return wav_file_path
     except Exception as e:
-        st.error(f"Librosa failed to process {file_path}: {e}")
+        st.error(f"Failed to convert {file_path} to WAV: {e}")
         return None  # Return None if conversion fails
 
-# Process Audio Files using librosa for MP3 conversion and Whisper for transcription
+# Process Audio Files using audioread and Whisper for transcription
 @st.cache_data
 def process_audio_files():
     if not os.path.exists(INPUT_FOLDER):
@@ -133,7 +137,7 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV with librosa and soundfile
+            # Convert MP3 to WAV with audioread and soundfile
             wav_file_path = convert_mp3_to_wav(file_path)
             if not wav_file_path:
                 continue  # If conversion failed, skip file
