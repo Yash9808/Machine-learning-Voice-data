@@ -12,12 +12,9 @@ from nltk.tag import pos_tag
 from ftplib import FTP
 from pydub import AudioSegment  # For MP3 to WAV conversion
 import soundfile as sf  # Alternative to librosa for WAV/MP3
-import wave  # Simple WAV handling
+import io  # In case we need to handle in-memory files for streaming
 
-# Set alternative binary paths
-os.environ["AUDIOREAD_FFMPEG"] = "/path/to/audioread"  # Not needed but for fallback use
-
-# Download necessary NLTK data
+# Set up NLTK
 nltk.download("punkt")
 nltk.download("averaged_perceptron_tagger")
 
@@ -101,43 +98,25 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Function to convert MP3 to WAV with multiple fallbacks
+# Function to convert MP3 to WAV with fallbacks (avoiding ffmpeg)
 def convert_mp3_to_wav(file_path):
     wav_file_path = file_path.replace(".mp3", ".wav")
 
     try:
-        # First, try using pydub with audioread
-        audio = AudioSegment.from_mp3(file_path)  # This uses audioread to handle MP3
-        audio.export(wav_file_path, format="wav")
+        # First, try using librosa (with soundfile backend)
+        y, sr = librosa.load(file_path, sr=None)
+        sf.write(wav_file_path, y, sr)  # Save using soundfile
         return wav_file_path
     except Exception as e:
-        st.error(f"Pydub failed: {e}")
+        st.error(f"Librosa failed: {e}")
         try:
-            # Second, try librosa
-            y, sr = librosa.load(file_path, sr=None)
-            sf.write(wav_file_path, y, sr)  # Use soundfile.write instead of deprecated librosa.output.write_wav
+            # Second, try pydub (without ffmpeg)
+            audio = AudioSegment.from_mp3(file_path)  # This uses pydub's default decoder (without ffmpeg)
+            audio.export(wav_file_path, format="wav")
             return wav_file_path
         except Exception as e:
-            st.error(f"Librosa failed: {e}")
-            try:
-                # Third, try soundfile
-                data, samplerate = sf.read(file_path)
-                sf.write(wav_file_path, data, samplerate)
-                return wav_file_path
-            except Exception as e:
-                st.error(f"Soundfile failed: {e}")
-                try:
-                    # Finally, fallback to using wave (if it's already a WAV file)
-                    with wave.open(file_path, 'rb') as f:
-                        params = f.getparams()
-                        audio_data = f.readframes(params.nframes)
-                    with wave.open(wav_file_path, 'wb') as wf:
-                        wf.setparams(params)
-                        wf.writeframes(audio_data)
-                    return wav_file_path
-                except Exception as e:
-                    st.error(f"Wave failed: {e}")
-                    return None
+            st.error(f"Pydub failed: {e}")
+            return None  # Return None if both methods fail
 
 # Process Audio Files using multiple fallback methods for conversion
 @st.cache_data
