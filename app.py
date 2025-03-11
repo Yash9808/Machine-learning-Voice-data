@@ -11,7 +11,6 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
-from pydub import AudioSegment  # Convert MP3 to WAV
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -97,24 +96,13 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Convert MP3 to WAV
-def convert_mp3_to_wav(mp3_path):
-    wav_path = mp3_path.replace(".mp3", ".wav")
-    try:
-        audio = AudioSegment.from_mp3(mp3_path)
-        audio.export(wav_path, format="wav")
-        return wav_path
-    except Exception as e:
-        st.error(f"❌ MP3 to WAV conversion failed: {e}")
-        return None
-
-# Load audio without FFmpeg
+# Load MP3 audio directly using torchaudio (No FFmpeg required)
 def load_audio(file_path):
     try:
-        waveform, sample_rate = torchaudio.load(file_path)
+        waveform, sample_rate = torchaudio.load(file_path, format="mp3")
         return waveform.squeeze(0).numpy(), sample_rate
     except Exception as e:
-        st.error(f"❌ Failed to load audio: {e}")
+        st.error(f"❌ Failed to load MP3 audio: {e}")
         return None, None
 
 # Process Audio Files
@@ -140,20 +128,15 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV
-            wav_file = convert_mp3_to_wav(file_path)
-            if not wav_file:
-                continue  # Skip if conversion failed
-
-            # Get Audio Duration
-            waveform, sample_rate = load_audio(wav_file)
+            # Load MP3 directly
+            waveform, sample_rate = load_audio(file_path)
             if waveform is None:
                 continue  # Skip if loading failed
 
             audio_length = len(waveform) / sample_rate
 
             # Transcription with Whisper
-            result = whisper_model.transcribe(wav_file)
+            result = whisper_model.transcribe(file_path)
             text = result.get("text", "")
 
             if not text.strip():
