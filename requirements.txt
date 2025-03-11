@@ -23,5 +23,6 @@ openai-whisper
 nltk
 seaborn
 matplotlib
+torchaudio
 
 
