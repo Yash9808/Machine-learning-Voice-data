@@ -1,3 +1,4 @@
+#this is the last code worked only problem with whisper audio file 
 import os
 import pandas as pd
 import numpy as np
@@ -11,31 +12,6 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
-from pydub import AudioSegment  # For MP3 to WAV conversion
-import subprocess
-
-# Clone FFmpeg from GitHub and compile it
-def install_ffmpeg():
-    if not os.path.exists("ffmpeg"):
-        # Clone the FFmpeg repository from GitHub
-        subprocess.run(["git", "clone", "https://git.ffmpeg.org/ffmpeg.git", "ffmpeg"])
-        
-        # Change to ffmpeg directory
-        os.chdir("ffmpeg")
-        
-        # Configure and compile FFmpeg (this can take time, make sure you have necessary tools)
-        subprocess.run(["./configure", "--prefix=/usr/local", "--disable-static", "--enable-shared", "--enable-pic"])
-        subprocess.run(["make", "-j4"])  # Use `-j4` to compile using 4 cores (adjust based on your system)
-        subprocess.run(["sudo", "make", "install"])
-        
-        # Change back to the original directory
-        os.chdir("..")
-        
-        # Set the FFmpeg binary path for Pydub
-        os.environ["FFMPEG_BINARY"] = "/usr/local/bin/ffmpeg"
-
-# Install FFmpeg (if not installed)
-install_ffmpeg()
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -144,21 +120,11 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV using Pydub
-            wav_file_path = file_path.replace(".mp3", ".wav")
+            # Get Audio Duration
+            audio_length = librosa.get_duration(path=file_path)
 
-            try:
-                audio = AudioSegment.from_mp3(file_path)
-                audio.export(wav_file_path, format="wav")
-            except Exception as e:
-                st.error(f"❌ Pydub failed on {file}: {e}")
-                continue  # Skip file if conversion fails
-
-            # Now process the WAV file
-            audio_length = librosa.get_duration(path=wav_file_path)
-
-            # Transcription with Whisper
-            result = whisper_model.transcribe(wav_file_path)
+            # Transcription with error handling
+            result = whisper_model.transcribe(file_path)
             text = result.get("text", "")
 
             if not text.strip():
@@ -166,7 +132,7 @@ def process_audio_files():
                 continue
 
         except Exception as e:
-            st.error(f"❌ Error processing {file}: {e}")
+            st.error(f"❌ Whisper failed on {file}: {e}")
             continue  # Skip file
 
         # Named Entity Recognition (NER) using NLTK
