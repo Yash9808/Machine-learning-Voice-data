@@ -12,7 +12,6 @@ from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
 from pydub import AudioSegment  # For MP3 to WAV conversion
-import moviepy.editor as mp  # For extracting audio from video
 import pysox  # For audio conversion
 
 # Download necessary NLTK data
@@ -122,7 +121,7 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV (Attempt with Pydub first, then fallback to MoviePy, PySox)
+            # Convert MP3 to WAV (Attempt with Pydub first, then fallback to PySox)
             wav_file_path = file_path.replace(".mp3", ".wav")
 
             # Try Pydub
@@ -130,23 +129,16 @@ def process_audio_files():
                 audio = AudioSegment.from_mp3(file_path)
                 audio.export(wav_file_path, format="wav")
             except Exception as e:
-                st.warning(f"⚠️ Pydub failed on {file}: {e}, trying MoviePy...")
+                st.warning(f"⚠️ Pydub failed on {file}: {e}, trying PySox...")
 
-                # Fallback to MoviePy
+                # Fallback to PySox
                 try:
-                    audio_clip = mp.AudioFileClip(file_path)
-                    audio_clip.write_audiofile(wav_file_path, codec="pcm_s16le")
+                    tfm = pysox.Transformer()
+                    tfm.convert(samplerate=16000)
+                    tfm.build(file_path, wav_file_path)
                 except Exception as e:
-                    st.warning(f"⚠️ MoviePy failed on {file}: {e}, trying PySox...")
-
-                    # Fallback to PySox
-                    try:
-                        tfm = pysox.Transformer()
-                        tfm.convert(samplerate=16000)
-                        tfm.build(file_path, wav_file_path)
-                    except Exception as e:
-                        st.error(f"❌ PySox failed on {file}: {e}")
-                        continue  # Skip file if all conversions fail
+                    st.error(f"❌ PySox failed on {file}: {e}")
+                    continue  # Skip file if all conversions fail
 
             # Now process the WAV file
             audio_length = librosa.get_duration(path=wav_file_path)
