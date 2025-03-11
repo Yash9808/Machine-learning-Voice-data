@@ -2,8 +2,6 @@ import os
 import pandas as pd
 import whisper
 import nltk
-import seaborn as sns
-import matplotlib.pyplot as plt
 import streamlit as st
 from textblob import TextBlob
 from nltk.tokenize import word_tokenize
@@ -99,11 +97,10 @@ def convert_mp3_to_wav(file_path):
 
     try:
         # Use librosa to load the MP3 file
-        y, sr = librosa.load(file_path, sr=None)  # sr=None to preserve the original sample rate
+        y, sr = librosa.load(file_path, sr=None, mono=True)  # mono=True to ensure 1 channel
 
         # Write the WAV file using soundfile
-        with sf.SoundFile(wav_file_path, 'w', samplerate=sr, channels=1, subtype='PCM_16') as f:
-            f.write(y)
+        sf.write(wav_file_path, y, sr, subtype='PCM_16')
         
         return wav_file_path
     except Exception as e:
@@ -143,9 +140,9 @@ def process_audio_files():
 
             # Transcription with Whisper
             result = whisper_model.transcribe(wav_file_path)
-            text = result.get("text", "")
+            text = result.get("text", "").strip()
 
-            if not text.strip():
+            if not text:
                 st.warning(f"⚠️ Skipping {file}: No transcribed text detected.")
                 continue
 
