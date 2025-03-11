@@ -115,7 +115,7 @@ def convert_mp3_to_wav(file_path):
         try:
             # Second, try librosa
             y, sr = librosa.load(file_path, sr=None)
-            librosa.output.write_wav(wav_file_path, y, sr)  # librosa uses audioread internally
+            sf.write(wav_file_path, y, sr)  # Use soundfile.write instead of deprecated librosa.output.write_wav
             return wav_file_path
         except Exception as e:
             st.error(f"Librosa failed: {e}")
