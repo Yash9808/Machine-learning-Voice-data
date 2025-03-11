@@ -11,6 +11,9 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
+from pydub import AudioSegment  # For MP3 to WAV conversion
+import moviepy.editor as mp  # For extracting audio from video
+import pysox  # For audio conversion
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -119,11 +122,37 @@ def process_audio_files():
             continue
 
         try:
-            # Get Audio Duration
-            audio_length = librosa.get_duration(path=file_path)
+            # Convert MP3 to WAV (Attempt with Pydub first, then fallback to MoviePy, PySox)
+            wav_file_path = file_path.replace(".mp3", ".wav")
 
-            # Transcription with error handling
-            result = whisper_model.transcribe(file_path)
+            # Try Pydub
+            try:
+                audio = AudioSegment.from_mp3(file_path)
+                audio.export(wav_file_path, format="wav")
+            except Exception as e:
+                st.warning(f"⚠️ Pydub failed on {file}: {e}, trying MoviePy...")
+
+                # Fallback to MoviePy
+                try:
+                    audio_clip = mp.AudioFileClip(file_path)
+                    audio_clip.write_audiofile(wav_file_path, codec="pcm_s16le")
+                except Exception as e:
+                    st.warning(f"⚠️ MoviePy failed on {file}: {e}, trying PySox...")
+
+                    # Fallback to PySox
+                    try:
+                        tfm = pysox.Transformer()
+                        tfm.convert(samplerate=16000)
+                        tfm.build(file_path, wav_file_path)
+                    except Exception as e:
+                        st.error(f"❌ PySox failed on {file}: {e}")
+                        continue  # Skip file if all conversions fail
+
+            # Now process the WAV file
+            audio_length = librosa.get_duration(path=wav_file_path)
+
+            # Transcription with Whisper
+            result = whisper_model.transcribe(wav_file_path)
             text = result.get("text", "")
 
             if not text.strip():
@@ -131,7 +160,7 @@ def process_audio_files():
                 continue
 
         except Exception as e:
-            st.error(f"❌ Whisper failed on {file}: {e}")
+            st.error(f"❌ Error processing {file}: {e}")
             continue  # Skip file
 
         # Named Entity Recognition (NER) using NLTK
