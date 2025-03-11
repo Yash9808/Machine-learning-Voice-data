@@ -1,7 +1,5 @@
-#this is the last code worked only problem with whisper audio file 
 import os
 import pandas as pd
-import numpy as np
 import librosa
 import whisper
 import nltk
@@ -12,6 +10,12 @@ from textblob import TextBlob
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
+from pydub import AudioSegment  # For MP3 to WAV conversion
+import soundfile as sf  # Alternative to librosa for WAV/MP3
+import wave  # Simple WAV handling
+
+# Set alternative binary paths
+os.environ["AUDIOREAD_FFMPEG"] = "/path/to/audioread"  # Not needed but for fallback use
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -97,7 +101,45 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Process Audio Files
+# Function to convert MP3 to WAV with multiple fallbacks
+def convert_mp3_to_wav(file_path):
+    wav_file_path = file_path.replace(".mp3", ".wav")
+
+    try:
+        # First, try using pydub with audioread
+        audio = AudioSegment.from_mp3(file_path)  # This uses audioread to handle MP3
+        audio.export(wav_file_path, format="wav")
+        return wav_file_path
+    except Exception as e:
+        st.error(f"Pydub failed: {e}")
+        try:
+            # Second, try librosa
+            y, sr = librosa.load(file_path, sr=None)
+            librosa.output.write_wav(wav_file_path, y, sr)  # librosa uses audioread internally
+            return wav_file_path
+        except Exception as e:
+            st.error(f"Librosa failed: {e}")
+            try:
+                # Third, try soundfile
+                data, samplerate = sf.read(file_path)
+                sf.write(wav_file_path, data, samplerate)
+                return wav_file_path
+            except Exception as e:
+                st.error(f"Soundfile failed: {e}")
+                try:
+                    # Finally, fallback to using wave (if it's already a WAV file)
+                    with wave.open(file_path, 'rb') as f:
+                        params = f.getparams()
+                        audio_data = f.readframes(params.nframes)
+                    with wave.open(wav_file_path, 'wb') as wf:
+                        wf.setparams(params)
+                        wf.writeframes(audio_data)
+                    return wav_file_path
+                except Exception as e:
+                    st.error(f"Wave failed: {e}")
+                    return None
+
+# Process Audio Files using multiple fallback methods for conversion
 @st.cache_data
 def process_audio_files():
     if not os.path.exists(INPUT_FOLDER):
@@ -120,11 +162,16 @@ def process_audio_files():
             continue
 
         try:
-            # Get Audio Duration
-            audio_length = librosa.get_duration(path=file_path)
+            # Convert MP3 to WAV with fallbacks
+            wav_file_path = convert_mp3_to_wav(file_path)
+            if not wav_file_path:
+                continue  # If conversion failed, skip file
 
-            # Transcription with error handling
-            result = whisper_model.transcribe(file_path)
+            # Now process the WAV file
+            audio_length = librosa.get_duration(path=wav_file_path)
+
+            # Transcription with Whisper
+            result = whisper_model.transcribe(wav_file_path)
             text = result.get("text", "")
 
             if not text.strip():
@@ -132,7 +179,7 @@ def process_audio_files():
                 continue
 
         except Exception as e:
-            st.error(f"❌ Whisper failed on {file}: {e}")
+            st.error(f"❌ Error processing {file}: {e}")
             continue  # Skip file
 
         # Named Entity Recognition (NER) using NLTK
