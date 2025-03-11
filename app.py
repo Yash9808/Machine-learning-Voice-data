@@ -120,10 +120,9 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV (using only Pydub)
+            # Convert MP3 to WAV using Pydub
             wav_file_path = file_path.replace(".mp3", ".wav")
 
-            # Try Pydub for MP3 to WAV conversion
             try:
                 audio = AudioSegment.from_mp3(file_path)
                 audio.export(wav_file_path, format="wav")
