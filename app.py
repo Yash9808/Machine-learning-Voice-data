@@ -12,7 +12,6 @@ from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from ftplib import FTP
 from pydub import AudioSegment  # For MP3 to WAV conversion
-import pysox  # For audio conversion
 
 # Download necessary NLTK data
 nltk.download("punkt")
@@ -121,24 +120,16 @@ def process_audio_files():
             continue
 
         try:
-            # Convert MP3 to WAV (Attempt with Pydub first, then fallback to PySox)
+            # Convert MP3 to WAV (using only Pydub)
             wav_file_path = file_path.replace(".mp3", ".wav")
 
-            # Try Pydub
+            # Try Pydub for MP3 to WAV conversion
             try:
                 audio = AudioSegment.from_mp3(file_path)
                 audio.export(wav_file_path, format="wav")
             except Exception as e:
-                st.warning(f"⚠️ Pydub failed on {file}: {e}, trying PySox...")
-
-                # Fallback to PySox
-                try:
-                    tfm = pysox.Transformer()
-                    tfm.convert(samplerate=16000)
-                    tfm.build(file_path, wav_file_path)
-                except Exception as e:
-                    st.error(f"❌ PySox failed on {file}: {e}")
-                    continue  # Skip file if all conversions fail
+                st.error(f"❌ Pydub failed on {file}: {e}")
+                continue  # Skip file if conversion fails
 
             # Now process the WAV file
             audio_length = librosa.get_duration(path=wav_file_path)
