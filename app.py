@@ -11,19 +11,86 @@ from textblob import TextBlob
 from collections import defaultdict
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
+from ftplib import FTP
 
 # Download necessary NLTK data
 nltk.download("punkt")
 nltk.download("averaged_perceptron_tagger")
 
-# Load AI models
+# Streamlit App
+st.title("📊 Telecall Analysis with FTP Audio Processing")
+
+# FTP Login Sidebar
+st.sidebar.header("📡 FTP Login")
+host = st.sidebar.text_input("Host", "cph.v4one.co.uk")
+username = st.sidebar.text_input("Username", "your_username")
+password = st.sidebar.text_input("Password", type="password")
+
+# Connect & List Directories
+if st.sidebar.button("🔄 Connect & List Folders"):
+    try:
+        ftp = FTP(host, timeout=120)
+        ftp.login(user=username, passwd=password)
+
+        # List available directories (assuming they are date-based)
+        st.write("📂 Available Directories on FTP:")
+        folders = []
+        ftp.retrlines("LIST", lambda x: (folders.append(x.split()[-1]), st.write(x)))
+
+        available_dates = [folder for folder in folders if folder.startswith("2025")]  # Adjust date pattern if needed
+
+        ftp.quit()
+        st.session_state["available_dates"] = available_dates
+        st.success("✅ Connected! Select a date below.")
+    except Exception as e:
+        st.error(f"Connection failed: {e}")
+
+# Select Date & Download Files
+if "available_dates" in st.session_state:
+    selected_date = st.selectbox("📅 Select a Date", st.session_state["available_dates"])
+
+    if st.button("📥 Download & Process Audio"):
+        try:
+            ftp = FTP(host)
+            ftp.login(user=username, passwd=password)
+
+            # Set up paths
+            remote_folder = selected_date
+            local_folder = f"audio_files/{selected_date}"
+            os.makedirs(local_folder, exist_ok=True)
+
+            # Get list of audio files
+            audio_files = []
+            ftp.cwd(remote_folder)
+            ftp.retrlines("LIST", lambda x: audio_files.append(x.split()[-1]))
+
+            # Download files
+            for file in audio_files:
+                local_file_path = os.path.join(local_folder, file)
+                with open(local_file_path, "wb") as f:
+                    ftp.retrbinary(f"RETR {file}", f.write)
+
+            ftp.quit()
+            st.success(f"✅ Downloaded {len(audio_files)} files from {selected_date}")
+
+            # Save selected folder for processing
+            st.session_state["input_folder"] = local_folder
+        except Exception as e:
+            st.error(f"Download failed: {e}")
+
+# Set input folder (After successful download)
+if "input_folder" in st.session_state:
+    INPUT_FOLDER = st.session_state["input_folder"]
+else:
+    INPUT_FOLDER = "audio_files"
+
+# Load AI Model (Whisper for Transcription)
 whisper_model = whisper.load_model("base")
 
-# Define paths
-INPUT_FOLDER = "audio_files"  # Change this to your folder
-OUTPUT_CSV = "telecall_analysis_130.csv"
+# Define CSV Output
+OUTPUT_CSV = "telecall_analysis.csv"
 
-# Define keywords
+# Define Keywords for Processing
 medical_tests = ["MRI", "X-Ray", "Ultrasound", "Endoscopy", "Gynaecology", "Orthopaedics", "General Surgery", "ENT"]
 subscriptions = ["Gold", "Platinum", "Silver", "Bronze"]
 upselling_phrases = [
@@ -31,17 +98,17 @@ upselling_phrases = [
     "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
 ]
 
-# Process audio files
+# Process Audio Files
 @st.cache_data
 def process_audio_files():
     data = []
-    mp3_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith(".mp3")][:135]
-    
+    mp3_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith(".mp3")]
+
     for file in mp3_files:
         file_path = os.path.join(INPUT_FOLDER, file)
         print(f"Processing {file}...")
 
-        # Audio duration
+        # Get Audio Duration
         audio_length = librosa.get_duration(path=file_path)
 
         # Transcription
@@ -53,7 +120,7 @@ def process_audio_files():
         tagged_words = pos_tag(words)
         entities = [word for word, tag in tagged_words if tag in ["NNP", "NN"]]
 
-        # Extract features
+        # Extract Features
         agent_name, person_name, subscription, medical_test, age = "", "", "", "", ""
         emergency, problem, report_delay, upselling = "No", "No", "No", "No"
 
@@ -74,11 +141,11 @@ def process_audio_files():
         if "not received" in text.lower() or "waiting for report" in text.lower():
             report_delay = "Yes"
 
-        # Sentiment Analysis using TextBlob
+        # Sentiment Analysis
         sentiment_score = TextBlob(text).sentiment.polarity
         sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
 
-        # Upselling detection
+        # Upselling Detection
         if any(phrase.lower() in text.lower() for phrase in upselling_phrases):
             upselling = "Yes" if sentiment in ["Positive", "Neutral"] else "No"
 
@@ -91,70 +158,26 @@ def process_audio_files():
     df.to_csv(OUTPUT_CSV, index=False)
     return df
 
-# Load and analyze data
-def analyze_data(df):
-    categorical_cols = ["Subscription", "Medical Test", "Emergency", "Problem", "Report Delay", "Upselling", "Sentiment", "Issue"]
-    for col in categorical_cols:
-        df[col] = df[col].astype("category").cat.codes
-    
-    df['State'] = df[categorical_cols].apply(tuple, axis=1)
-    df['Long Call'] = df['Audio Length (sec)'] > 500
-    transition_matrix = defaultdict(lambda: defaultdict(int))
-
-    for i in range(len(df) - 1):
-        current_state = df.iloc[i]['State']
-        next_state = df.iloc[i + 1]['State']
-        transition_matrix[current_state][next_state] += 1
-
-    states = list(transition_matrix.keys())
-    all_next_states = set(state for next_states in transition_matrix.values() for state in next_states)
-
-    transition_data = []
-    for current_state in states:
-        for next_state in all_next_states:
-            transition_data.append(transition_matrix[current_state].get(next_state, 0))
-
-    transition_df = pd.DataFrame({
-        'State': [str(state) for state in states for _ in all_next_states],
-        'Next State': [str(next_state) for _ in states for next_state in all_next_states],
-        'Transition Probability': transition_data
-    })
-    return df, transition_df
-
-# Streamlit App
-st.title("Telecall Analysis Dashboard")
-
-if not os.path.exists(OUTPUT_CSV):
-    st.warning("Processing audio files, this might take a while...")
+# Load Data
+if "input_folder" in st.session_state:
     df = process_audio_files()
+    st.write("## Processed Data")
+    st.dataframe(df.head())
+
+    # Sentiment Analysis
+    st.write("## Sentiment Analysis")
+    sentiment_counts = df["Sentiment"].value_counts()
+    st.bar_chart(sentiment_counts)
+
+    # Upselling Analysis
+    st.write("## Upselling Analysis")
+    upselling_counts = df["Upselling"].value_counts()
+    st.bar_chart(upselling_counts)
+
+    # Long Calls
+    st.write("## Long Calls")
+    st.dataframe(df[df["Audio Length (sec)"] > 500])
+
+    st.success("✅ Analysis Complete!")
 else:
-    df = pd.read_csv(OUTPUT_CSV)
-
-df, transition_df = analyze_data(df)
-
-st.write("## Processed Data")
-st.dataframe(df.head())
-
-st.write("## Transition Matrix Heatmap")
-plt.figure(figsize=(12, 8))
-sns.heatmap(transition_df.pivot(index='State', columns='Next State', values='Transition Probability'),
-            annot=True, fmt='.2f', cmap="YlGnBu")
-st.pyplot(plt)
-
-st.write("## Audio Length Distribution")
-plt.figure(figsize=(10, 5))
-sns.histplot(df['Audio Length (sec)'], bins=20, kde=True)
-st.pyplot(plt)
-
-st.write("## Sentiment Analysis")
-sentiment_counts = df['Sentiment'].value_counts()
-st.bar_chart(sentiment_counts)
-
-st.write("## Upselling Analysis")
-upselling_counts = df['Upselling'].value_counts()
-st.bar_chart(upselling_counts)
-
-st.write("## Long Calls")
-st.dataframe(df[df['Long Call']])
-
-st.success("Analysis Complete!")
+    st.warning("⚠️ Please connect to FTP and download files before processing.")
