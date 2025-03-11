@@ -15,3 +15,13 @@ pydub
 tensorflow>=2.0.0
 ffmpeg-python
 torch==1.12.1
+
+pandas
+numpy
+librosa
+openai-whisper
+nltk
+seaborn
+matplotlib
+
+
