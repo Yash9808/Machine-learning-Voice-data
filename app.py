@@ -1,198 +1,152 @@
 import os
+import ftplib
+import assemblyai as aai
+import streamlit as st
+import librosa
+import soundfile as sf
 import pandas as pd
 import whisper
-import nltk
-import streamlit as st
-from textblob import TextBlob
+from ftplib import FTP
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
-from ftplib import FTP
-import soundfile as sf  # For writing WAV
-import librosa  # For decoding MP3
+from textblob import TextBlob
 
-# Set up NLTK
-nltk.download("punkt")
-nltk.download("averaged_perceptron_tagger")
+host = "cph.v4one.co.uk"
 
-# Streamlit App
-st.title("📊 Telecall Analysis with FTP Audio Processing")
+def transcribe_audio(file_path, api_key):
+    aai.settings.api_key = api_key
+    transcriber = aai.Transcriber()
+    transcript = transcriber.transcribe(file_path)
+    return transcript.text
 
-# FTP Login Sidebar
-st.sidebar.header("📡 FTP Login")
-host = st.sidebar.text_input("Host", "cph.v4one.co.uk")
-username = st.sidebar.text_input("Username", "your_username")
-password = st.sidebar.text_input("Password", type="password")
-
-# Connect & List Directories
-if st.sidebar.button("🔄 Connect & List Folders"):
+def connect_ftp(ftp_user, ftp_pass):
     try:
-        ftp = FTP(host, timeout=120)
-        ftp.login(user=username, passwd=password)
-
-        # List available directories
-        st.write("📂 Available Directories on FTP:")
-        folders = []
-        ftp.retrlines("LIST", lambda x: (folders.append(x.split()[-1]), st.write(x)))
-
-        available_dates = [folder for folder in folders if folder.startswith("2025")]
-
+        ftp = ftplib.FTP(host)
+        ftp.login(ftp_user, ftp_pass)
+        folders = ftp.nlst()
         ftp.quit()
-        st.session_state["available_dates"] = available_dates
-        st.success("✅ Connected! Select a date below.")
+        return folders, None
     except Exception as e:
-        st.error(f"Connection failed: {e}")
+        return None, str(e)
 
-# Select Date & Download Files
+def fetch_from_ftp(ftp_user, ftp_pass, ftp_folder, api_key):
+    ftp = ftplib.FTP(host)
+    ftp.login(ftp_user, ftp_pass)
+    ftp.cwd(ftp_folder)
+    filenames = ftp.nlst()
+    results = {}
+    
+    os.makedirs("./downloads", exist_ok=True)
+    
+    for filename in filenames:
+        local_path = f"./downloads/{filename}"
+        with open(local_path, 'wb') as f:
+            ftp.retrbinary(f'RETR {filename}', f.write)
+        results[filename] = transcribe_audio(local_path, api_key)
+    
+    ftp.quit()
+    return results
+
+st.title("FTP & Manual Audio Transcriber with AssemblyAI")
+
+api_key = st.text_input("Enter your AssemblyAI API Key", type="password")
+
+st.subheader("Login via FTP or Upload Files Manually")
+
+ftp_login_success = False
+ftp_user = st.text_input("FTP Username")
+ftp_pass = st.text_input("FTP Password", type="password")
+
+if st.button("Connect to FTP"):
+    folders, error = connect_ftp(ftp_user, ftp_pass)
+    if error:
+        st.error(f"Failed to connect: {error}")
+    else:
+        ftp_login_success = True
+        st.success("Connected to FTP Server!")
+        folder = st.selectbox("Select an FTP folder", folders)
+        if st.button("Fetch & Transcribe Audio Files"):
+            if not api_key:
+                st.error("Please enter your AssemblyAI API Key")
+            else:
+                with st.spinner("Fetching and transcribing files..."):
+                    results = fetch_from_ftp(ftp_user, ftp_pass, folder, api_key)
+                    for filename, transcript in results.items():
+                        st.subheader(f"Transcription for {filename}")
+                        st.text_area("", transcript, height=200)
+
+st.subheader("Or Upload Audio Files Manually")
+uploaded_files = st.file_uploader("Upload audio files", accept_multiple_files=True)
+if st.button("Transcribe Uploaded Files"):
+    if not api_key:
+        st.error("Please enter your AssemblyAI API Key")
+    elif not uploaded_files:
+        st.error("Please upload at least one file")
+    else:
+        results = {}
+        os.makedirs("./uploads", exist_ok=True)
+        for file in uploaded_files:
+            file_path = os.path.join("./uploads", file.name)
+            with open(file_path, "wb") as f:
+                f.write(file.getbuffer())
+            results[file.name] = transcribe_audio(file_path, api_key)
+        
+        for filename, transcript in results.items():
+            st.subheader(f"Transcription for {filename}")
+            st.text_area("Transcript", transcript, height=200)
+
+st.subheader("Select Date & Download Files")
 if "available_dates" in st.session_state:
     selected_date = st.selectbox("📅 Select a Date", st.session_state["available_dates"])
-
+    
     if st.button("📥 Download & Process Audio"):
         try:
             ftp = FTP(host)
-            ftp.login(user=username, passwd=password)
-
-            # Set up paths
+            ftp.login(user=ftp_user, passwd=ftp_pass)
             remote_folder = selected_date
             local_folder = f"audio_files/{selected_date}"
             os.makedirs(local_folder, exist_ok=True)
-
-            # Get list of audio files
             audio_files = []
             ftp.cwd(remote_folder)
             ftp.retrlines("LIST", lambda x: audio_files.append(x.split()[-1]))
-
-            # Download files
             for file in audio_files:
                 local_file_path = os.path.join(local_folder, file)
                 with open(local_file_path, "wb") as f:
                     ftp.retrbinary(f"RETR {file}", f.write)
-
             ftp.quit()
             st.success(f"✅ Downloaded {len(audio_files)} files from {selected_date}")
-
             st.session_state["input_folder"] = local_folder
         except Exception as e:
             st.error(f"Download failed: {e}")
 
-# Set input folder (After successful download)
 INPUT_FOLDER = st.session_state.get("input_folder", "audio_files")
-
-# Load AI Model (Whisper for Transcription)
 whisper_model = whisper.load_model("base")
-
-# Define CSV Output
 OUTPUT_CSV = "telecall_analysis.csv"
 
-# Keywords for Processing
-medical_tests = ["MRI", "X-Ray", "Ultrasound", "Endoscopy", "Gynaecology", "Orthopaedics", "General Surgery", "ENT"]
-subscriptions = ["Gold", "Platinum", "Silver", "Bronze"]
-upselling_phrases = [
-    "You might want to consider", "A better option would be", "I recommend upgrading to",
-    "You could save more by", "This plan offers better benefits", "Would you like to try our premium plan?"
-]
-
-# Function to convert MP3 to WAV using librosa and soundfile (No FFmpeg)
-def convert_mp3_to_wav(file_path):
-    wav_file_path = file_path.replace(".mp3", ".wav")
-
-    try:
-        # Use librosa to load the MP3 file
-        y, sr = librosa.load(file_path, sr=None, mono=True)  # mono=True to ensure 1 channel
-
-        # Write the WAV file using soundfile
-        sf.write(wav_file_path, y, sr, subtype='PCM_16')
-        
-        return wav_file_path
-    except Exception as e:
-        st.error(f"Failed to convert {file_path} to WAV: {e}")
-        return None  # Return None if conversion fails
-
-# Process Audio Files using librosa, soundfile, and Whisper for transcription
 @st.cache_data
 def process_audio_files():
     if not os.path.exists(INPUT_FOLDER):
         st.error(f"❌ Input folder not found: {INPUT_FOLDER}")
         st.stop()
-
+    
     mp3_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith(".mp3")]
-
     if not mp3_files:
         st.error(f"❌ No MP3 files found in {INPUT_FOLDER}")
         st.stop()
-
+    
     data = []
-
     for file in mp3_files:
         file_path = os.path.join(INPUT_FOLDER, file)
-
-        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-            st.warning(f"⚠️ Skipping {file}: File is empty or missing.")
-            continue
-
-        try:
-            # Convert MP3 to WAV with librosa and soundfile
-            wav_file_path = convert_mp3_to_wav(file_path)
-            if not wav_file_path:
-                continue  # If conversion failed, skip file
-
-            # Now process the WAV file
-            audio_length = librosa.get_duration(path=wav_file_path)
-
-            # Transcription with Whisper
-            result = whisper_model.transcribe(wav_file_path)
-            text = result.get("text", "").strip()
-
-            if not text:
-                st.warning(f"⚠️ Skipping {file}: No transcribed text detected.")
-                continue
-
-        except Exception as e:
-            st.error(f"❌ Error processing {file}: {e}")
-            continue  # Skip file
-
-        # Named Entity Recognition (NER) using NLTK
-        words = word_tokenize(text)
-        tagged_words = pos_tag(words)
-        entities = [word for word, tag in tagged_words if tag in ["NNP", "NN"]]
-
-        # Extract Features
-        agent_name, person_name, subscription, medical_test = "", "", "", ""
-        emergency, problem, report_delay, upselling = "No", "No", "No", "No"
-
-        for word in entities:
-            if not agent_name:
-                agent_name = word
-            else:
-                person_name = word
-
-        if any(sub.lower() in text.lower() for sub in subscriptions):
-            subscription = next(sub for sub in subscriptions if sub.lower() in text.lower())
-        if any(test.lower() in text.lower() for test in medical_tests):
-            medical_test = next(test for test in medical_tests if test.lower() in text.lower())
-        if "urgent" in text.lower() or "immediate" in text.lower():
-            emergency = "Yes"
-        if "pain" in text.lower() or "issue" in text.lower():
-            problem = "Yes"
-        if "not received" in text.lower() or "waiting for report" in text.lower():
-            report_delay = "Yes"
-
-        # Sentiment Analysis
-        sentiment_score = TextBlob(text).sentiment.polarity
-        sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
-
-        # Upselling Detection
-        if any(phrase.lower() in text.lower() for phrase in upselling_phrases):
-            upselling = "Yes" if sentiment in ["Positive", "Neutral"] else "No"
-
-        data.append([file, round(audio_length, 2), agent_name, person_name, subscription, medical_test,
-                     problem, emergency, report_delay, upselling, sentiment])
-
-    df = pd.DataFrame(data, columns=["File", "Audio Length (sec)", "Agent Name", "Person Name", "Subscription",
-                                     "Medical Test", "Problem", "Emergency", "Report Delay", "Upselling", "Sentiment"])
+        result = whisper_model.transcribe(file_path)
+        text = result.get("text", "").strip()
+        data.append([file, text])
+    df = pd.DataFrame(data, columns=["File", "Transcription"])
     df.to_csv(OUTPUT_CSV, index=False)
     return df
 
-# Load and Display Data
 if "input_folder" in st.session_state:
     df = process_audio_files()
     st.dataframe(df.head())
+
+if __name__ == "__main__":
+    st.title("FTP & Manual Upload Transcriber App")
