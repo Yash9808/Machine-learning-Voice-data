@@ -149,4 +149,4 @@ if "input_folder" in st.session_state:
     st.dataframe(df.head())
 
 if __name__ == "__main__":
-    st.title("FTP & Manual Upload Transcriber App")
+    st.title(" ")
