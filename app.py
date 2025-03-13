@@ -12,6 +12,7 @@ from collections import defaultdict
 import whisper
 from ftplib import FTP
 
+# FTP host
 host = "cph.v4one.co.uk"
 
 # Transcription Function
@@ -64,6 +65,7 @@ def fetch_from_ftp(ftp_user, ftp_pass, ftp_folder, api_key):
         st.error(f"Error during FTP fetch: {e}")
         return {}
 
+# Main Streamlit Application
 st.title("FTP & Manual Audio Transcriber with AssemblyAI")
 
 api_key = st.text_input("Enter your AssemblyAI API Key", type="password")
@@ -74,6 +76,7 @@ ftp_login_success = False
 ftp_user = st.text_input("FTP Username")
 ftp_pass = st.text_input("FTP Password", type="password")
 
+# FTP Connection and Fetching Files
 if st.button("Connect to FTP"):
     folders, error = connect_ftp(ftp_user, ftp_pass)
     if error:
@@ -91,12 +94,15 @@ if st.button("Connect to FTP"):
                     if results:
                         for filename, transcript in results.items():
                             st.subheader(f"Transcription for {filename}")
-                            st.text_area("", transcript, height=200)
+                            # Add unique key for each text_area to avoid the duplicate ID error
+                            st.text_area(f"Transcript for {filename}", transcript, height=200, key=filename)
                     else:
                         st.error("No transcriptions found or error occurred.")
 
+# Uploading and Transcribing Audio Files Manually
 st.subheader("Or Upload Audio Files Manually")
 uploaded_files = st.file_uploader("Upload audio files", accept_multiple_files=True)
+
 if st.button("Transcribe Uploaded Files"):
     if not api_key:
         st.error("Please enter your AssemblyAI API Key")
@@ -111,13 +117,15 @@ if st.button("Transcribe Uploaded Files"):
                 f.write(file.getbuffer())
             results[file.name] = transcribe_audio(file_path, api_key)
         
+        # Display the transcriptions with unique keys for each text_area
         for filename, transcript in results.items():
             st.subheader(f"Transcription for {filename}")
-            st.text_area("Transcript", transcript, height=200)
+            st.text_area(f"Transcript for {filename}", transcript, height=200, key=filename)
 
 # Function to process the audio files and generate transition matrix and plots
 @st.cache_data
 def process_audio_files():
+    INPUT_FOLDER = "audio_files"
     if not os.path.exists(INPUT_FOLDER):
         st.error(f"❌ Input folder not found: {INPUT_FOLDER}")
         st.stop()
@@ -140,9 +148,8 @@ def process_audio_files():
 
     df = pd.DataFrame(data, columns=["File", "Transcription"])
     
-    # Assume we are adding sample columns for 'Subscription', 'Medical Test', etc.
-    # These columns would likely need to be inferred from your transcription or data
-    df['Subscription'] = np.random.choice([0, 1], size=len(df))  # Example, replace with actual data
+    # Example columns for features like Subscription, Medical Test, etc.
+    df['Subscription'] = np.random.choice([0, 1], size=len(df))  # Replace with actual data
     df['Medical Test'] = np.random.choice([0, 1], size=len(df))
     df['Emergency'] = np.random.choice([0, 1], size=len(df))
     df['Problem'] = np.random.choice([0, 1], size=len(df))
@@ -238,7 +245,6 @@ def process_audio_files():
     return df
 
 # Set input folder and process the files
-INPUT_FOLDER = "audio_files"
 whisper_model = whisper.load_model("base")
 OUTPUT_CSV = "telecall_analysis.csv"
 
